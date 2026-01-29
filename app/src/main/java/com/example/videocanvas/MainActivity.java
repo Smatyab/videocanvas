@@ -31,6 +31,9 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
     private static final int PICK_VIDEO_REQUEST = 1;
     private static final int PERMISSION_REQUEST_CODE = 100;
 
+    // Define your Default URL here
+    private static final String DEFAULT_VIDEO_URL = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
+
     private EditText etVideoPath, etStartTime, etEndTime;
     private SurfaceView surfaceView;
     private Button btnToggle;
@@ -66,18 +69,23 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
 
         checkPermissions();
 
+        // Navigate to Screen 2
         btnNextScreen.setOnClickListener(v -> {
             releaseMediaPlayer();
+            // Ensure you have created MainActivity2.java as discussed before
             Intent intent = new Intent(MainActivity.this, MainActivity2.class);
             startActivity(intent);
         });
 
         btnBrowse.setOnClickListener(v -> openFilePicker());
+
+        // This button triggers the logic to choose between Default or Selected video
         btnLoad.setOnClickListener(v -> prepareVideo());
 
         btnToggle.setOnClickListener(v -> {
             if (mediaPlayer == null || !isVideoLoaded) {
-                Toast.makeText(this, "Load video first", Toast.LENGTH_SHORT).show();
+                // If not loaded, try to load (it will pick default if empty)
+                prepareVideo();
                 return;
             }
             if (mediaPlayer.isPlaying()) {
@@ -109,17 +117,34 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
     }
 
     private void prepareVideo() {
-        String path = etVideoPath.getText().toString().trim();
-        if (path.isEmpty()) return;
+        // 1. Check what is in the text box
+        String inputPath = etVideoPath.getText().toString().trim();
+        String finalPathToPlay;
+
+        // 2. Logic: Default vs User Input
+        if (inputPath.isEmpty()) {
+            // Case: Input is empty -> Play Default Video
+            finalPathToPlay = DEFAULT_VIDEO_URL;
+            // Clear local URI reference so we don't accidentally try to play a file that isn't selected
+            currentVideoUri = null;
+            Toast.makeText(this, "Input empty. Playing Default Video.", Toast.LENGTH_SHORT).show();
+        } else {
+            // Case: Input has text -> Play User Selection
+            finalPathToPlay = inputPath;
+        }
 
         startTimeInMillis = 0;
         try {
-            startTimeInMillis = (int) (Float.parseFloat(etStartTime.getText().toString()) * 1000);
+            if (!etStartTime.getText().toString().isEmpty()) {
+                startTimeInMillis = (int) (Float.parseFloat(etStartTime.getText().toString()) * 1000);
+            }
         } catch (Exception ignored) {}
 
         endTimeInMillis = -1;
         try {
-            endTimeInMillis = (int) (Float.parseFloat(etEndTime.getText().toString()) * 1000);
+            if (!etEndTime.getText().toString().isEmpty()) {
+                endTimeInMillis = (int) (Float.parseFloat(etEndTime.getText().toString()) * 1000);
+            }
         } catch (Exception ignored) {}
 
         releaseMediaPlayer();
@@ -129,10 +154,13 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
             mediaPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
             mediaPlayer.setDisplay(surfaceHolder);
 
-            if (currentVideoUri != null && path.equals(currentVideoUri.toString())) {
+            // 3. Set Data Source
+            // If we have a local URI and the text matches it, play from local storage
+            if (currentVideoUri != null && finalPathToPlay.equals(currentVideoUri.toString())) {
                 mediaPlayer.setDataSource(this, currentVideoUri);
             } else {
-                mediaPlayer.setDataSource(path);
+                // Otherwise play from URL (either the default one or the user typed one)
+                mediaPlayer.setDataSource(finalPathToPlay);
             }
 
             mediaPlayer.setOnPreparedListener(mp -> {
@@ -154,10 +182,17 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
                 startPlaybackMonitor();
             });
 
+            // Add error listener to catch bad URLs
+            mediaPlayer.setOnErrorListener((mp, what, extra) -> {
+                Toast.makeText(MainActivity.this, "Error playing video", Toast.LENGTH_SHORT).show();
+                return false;
+            });
+
             mediaPlayer.prepareAsync();
 
         } catch (Exception e) {
             e.printStackTrace();
+            Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -188,7 +223,9 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == PICK_VIDEO_REQUEST && resultCode == Activity.RESULT_OK && data != null) {
             currentVideoUri = data.getData();
-            etVideoPath.setText(currentVideoUri.toString());
+            if (currentVideoUri != null) {
+                etVideoPath.setText(currentVideoUri.toString());
+            }
         }
     }
 
@@ -198,6 +235,7 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
             mediaPlayer.release();
             mediaPlayer = null;
         }
+        isVideoLoaded = false;
     }
 
     private void checkPermissions() {
